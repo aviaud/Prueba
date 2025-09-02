@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geolocalización con Trazado de Ruta y Puntos</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-top: 20px;
+        }
+
+        #map {
+            height: 80vh;
+            width: 100%;
+        }
+
+        #menu {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            max-width: 220px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+
+        #menu h2 {
+            margin-top: 0;
+            font-size: 16px;
+            color: #2c3e50;
+        }
+
+        #menu label {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        #menu button {
+            margin-top: 8px;
+            width: 100%;
+            padding: 8px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+
+        #menu button:hover {
+            background: #0056b3;
+        }
+
+        #status-message {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            font-weight: bold;
+            z-index: 1000;
+            max-width: 90%;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<h1>🗺️ Geolocalización con Ruta y Puntos de Referencia</h1>
+
+<div id="map"></div>
+
+<div id="menu">
+    <h2>⚙️ Opciones</h2>
+    <button id="startTrackingBtn">▶️ Iniciar Seguimiento</button>
+    <button id="stopTrackingBtn" disabled>⏹ Detener Seguimiento</button>
+    <label><input type="checkbox" id="toggleSpeed"> Mostrar velocidad/dirección</label>
+    <label><input type="checkbox" id="toggleDistance"> Mostrar distancia recorrida</label>
+    <label><input type="checkbox" id="toggleSave"> Guardar ruta automáticamente</label>
+    <label><input type="checkbox" id="toggleReferencePoints"> Colocar puntos de referencia</label>
+    <button id="downloadRouteBtn">⬇️ Descargar Ruta</button>
+    <button id="toggleMapStyleBtn">🌓 Cambiar estilo</button>
+    <button id="clearRouteBtn">🗑 Limpiar Ruta</button>
+</div>
+
+<div id="status-message">Haz clic en "Iniciar Seguimiento" para comenzar...</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+    const statusMessage = document.getElementById("status-message");
+    const startTrackingBtn = document.getElementById("startTrackingBtn");
+    const stopTrackingBtn = document.getElementById("stopTrackingBtn");
+
+    const toggleSpeed = document.getElementById("toggleSpeed");
+    const toggleDistance = document.getElementById("toggleDistance");
+    const toggleSave = document.getElementById("toggleSave");
+    const toggleReferencePoints = document.getElementById("toggleReferencePoints");
+    const downloadRouteBtn = document.getElementById("downloadRouteBtn");
+    const toggleMapStyleBtn = document.getElementById("toggleMapStyleBtn");
+    const clearRouteBtn = document.getElementById("clearRouteBtn");
+
+    let map, marker, routePolyline, watchId;
+    let routeCoordinates = [];
+    let referencePoints = [];
+    let totalDistance = 0;
+    let darkMode = false;
+    const DEFAULT_ZOOM = 16;
+
+    // Haversine para distancia en metros
+    function getDistance(latlng1, latlng2){
+        const R = 6371e3;
+        const toRad = deg => deg * Math.PI / 180;
+        const dLat = toRad(latlng2[0]-latlng1[0]);
+        const dLng = toRad(latlng2[1]-latlng1[1]);
+        const a = Math.sin(dLat/2)**2 + Math.cos(toRad(latlng1[0]))*Math.cos(toRad(latlng2[0]))*Math.sin(dLng/2)**2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    function startTracking(){
+        if(navigator.geolocation){
+            statusMessage.textContent = "Iniciando seguimiento...";
+            startTrackingBtn.disabled = true;
+            stopTrackingBtn.disabled = false;
+            routeCoordinates = [];
+            totalDistance = 0;
+            if(routePolyline) map.removeLayer(routePolyline);
+
+            watchId = navigator.geolocation.watchPosition(showPosition, showError, {enableHighAccuracy:true, timeout:5000, maximumAge:0});
+        } else {
+            statusMessage.textContent = "¡Tu navegador no soporta geolocalización!";
+        }
+    }
+
+    function stopTracking(){
+        if(watchId){
+            navigator.geolocation.clearWatch(watchId);
+            statusMessage.textContent = "Seguimiento detenido.";
+            startTrackingBtn.disabled = false;
+            stopTrackingBtn.disabled = true;
+        }
+    }
+
+    function showPosition(position){
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const newLatLng = [lat, lng];
+
+        let msg = `Ubicación actual: Lat ${lat.toFixed(6)}, Lng ${lng.toFixed(6)}`;
+
+        if(toggleSpeed.checked && position.coords.speed){
+            msg += `<br>Velocidad: ${(position.coords.speed*3.6).toFixed(2)} km/h`;
+        }
+
+        if(routeCoordinates.length>0 && toggleDistance.checked){
+            totalDistance += getDistance(routeCoordinates[routeCoordinates.length-1], newLatLng);
+            msg += `<br>Distancia recorrida: ${(totalDistance/1000).toFixed(2)} km`;
+        }
+
+        statusMessage.innerHTML = msg;
+
+        // Mapa inicial
+        if(!map){
+            map = L.map('map').setView(newLatLng, DEFAULT_ZOOM);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+
+            // Click en mapa para puntos de referencia
+            map.on("click", function(e){
+                if(!toggleReferencePoints.checked) return;
+                const latlng = [e.latlng.lat, e.latlng.lng];
+                const markerRef = L.marker(latlng, {draggable:true}).addTo(map);
+                const idx = referencePoints.length;
+                markerRef.bindPopup(`<input type="text" placeholder="Nombre" id="point-${idx}"><br><button onclick="savePoint(${idx})">Guardar</button>`).openPopup();
+                referencePoints.push({latlng, marker:markerRef, name:""});
+            });
+        }
+
+        // Marcador
+        if(!marker){
+            marker = L.marker(newLatLng).addTo(map).bindPopup("¡Estás aquí!").openPopup();
+        } else {
+            marker.setLatLng(newLatLng).setPopupContent("¡Aquí estás ahora!").openPopup();
+        }
+
+        routeCoordinates.push(newLatLng);
+        if(routePolyline){
+            routePolyline.setLatLngs(routeCoordinates);
+        } else {
+            routePolyline = L.polyline(routeCoordinates,{color:'blue', weight:5, opacity:0.7}).addTo(map);
+        }
+
+        // Guardar en localStorage
+        if(toggleSave.checked) localStorage.setItem("route", JSON.stringify(routeCoordinates));
+
+        map.fitBounds(routePolyline.getBounds());
+    }
+
+    function showError(error){
+        let errorMessage = "Error desconocido";
+        switch(error.code){
+            case error.PERMISSION_DENIED: errorMessage = "Permiso denegado"; break;
+            case error.POSITION_UNAVAILABLE: errorMessage = "Posición no disponible"; break;
+            case error.TIMEOUT: errorMessage = "Tiempo agotado"; break;
+        }
+        statusMessage.textContent = `Error: ${errorMessage}`;
+        startTrackingBtn.disabled = false;
+        stopTrackingBtn.disabled = true;
+        if(watchId) navigator.geolocation.clearWatch(watchId);
+    }
+
+    // Guardar nombre del punto
+    function savePoint(index){
+        const input = document.getElementById(`point-${index}`);
+        if(input){
+            referencePoints[index].name = input.value;
+            referencePoints[index].marker.bindPopup(input.value);
+        }
+    }
+
+    // Descargar ruta y puntos en GeoJSON
+    downloadRouteBtn.addEventListener("click", () => {
+        const geojson = {type:"FeatureCollection", features:[]};
+        if(routeCoordinates.length>1){
+            geojson.features.push({
+                type:"Feature",
+                geometry:{type:"LineString", coordinates:routeCoordinates.map(c=>[c[1],c[0]])},
+                properties:{}
+            });
+        }
+        referencePoints.forEach(p=>{
+            geojson.features.push({
+                type:"Feature",
+                geometry:{type:"Point", coordinates:[p.latlng[1],p.latlng[0]]},
+                properties:{name:p.name || "Sin nombre"}
+            });
+        });
+        const blob = new Blob([JSON.stringify(geojson)], {type:"application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "ruta_con_puntos.geojson";
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    // Cambiar estilo de mapa
+    toggleMapStyleBtn.addEventListener("click", () => {
+        if(darkMode){
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        } else {
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        }
+        darkMode = !darkMode;
+    });
+
+    // Limpiar ruta
+    clearRouteBtn.addEventListener("click", () => {
+        routeCoordinates = [];
+        totalDistance = 0;
+        if(routePolyline) map.removeLayer(routePolyline);
+        routePolyline = null;
+        referencePoints.forEach(p=>map.removeLayer(p.marker));
+        referencePoints = [];
+        statusMessage.textContent = "Ruta y puntos limpiados";
+    });
+
+    // Botones seguimiento
+    startTrackingBtn.addEventListener('click', startTracking);
+    stopTrackingBtn.addEventListener('click', stopTracking);
+
+    // Exponer savePoint global para los botones de los popups
+    window.savePoint = savePoint;
+
+</script>
+</body>
+</html>
