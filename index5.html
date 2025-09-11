@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>InventarioWeb</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container my-4" id="contenido" style="display:none;">
+  <h1 class="text-center mb-4">📦 InventarioWeb 📦</h1>
+
+  <!-- Formulario -->
+  <div class="card shadow p-3 mb-4">
+    <h5 class="card-title">➕ Agregar / Editar Producto</h5>
+    <form id="formProducto" class="row g-3">
+      <div class="col-md-3">
+        <input type="text" id="codigo" class="form-control" placeholder="Código" required>
+      </div>
+      <div class="col-md-5">
+        <input type="text" id="descripcion" class="form-control" placeholder="Descripción" required>
+      </div>
+      <div class="col-md-2">
+        <input type="number" step="0.01" id="cantidad" class="form-control" placeholder="Cantidad" required>
+      </div>
+      <div class="col-md-2 d-grid">
+        <button type="submit" class="btn btn-success">💾 Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Inventario -->
+  <div class="card shadow p-3 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="card-title">📋 Inventario Actual</h5>
+      <input type="text" id="buscar" class="form-control w-50" placeholder="🔎 Buscar en inventario...">
+    </div>
+    <div class="mb-2">
+      <button onclick="exportarCSV()" class="btn btn-primary btn-sm">📤 Exportar CSV</button>
+      <label class="btn btn-secondary btn-sm">
+        📥 Importar CSV <input type="file" id="importarCSV" accept=".csv" onchange="importarCSV(event)" hidden>
+      </label>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-striped table-hover">
+        <thead class="table-dark">
+          <tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="tablaInventario"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Catálogo -->
+  <div class="card shadow p-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="card-title mb-0">📑 Catálogo</h5>
+      <!-- 🔎 Buscador en catálogo (nuevo) -->
+      <input type="text" id="buscarCatalogo" class="form-control w-50" placeholder="🔎 Buscar en catálogo...">
+    </div>
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm">
+        <thead class="table-light">
+          <tr><th>Código</th><th>Descripción</th></tr>
+        </thead>
+        <tbody id="tablaCatalogo"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbxBk8ZWUlTBKbXm9AqwQmL-aARY1jC2jbSnqNprF6UP9q46BY2dH5XkEKApxiSr81fQRQ/exec"; 
+const PASSWORD = "123456"; // 🔑 Cambia esta clave cuando publiques
+
+let catalogo = [];
+let inventario = [];
+
+// 🔐 Autenticación simple
+function login(){
+  const clave = prompt("Ingrese la contraseña para acceder:");
+  if(clave === PASSWORD){
+    document.getElementById('contenido').style.display = "block";
+    cargarCatalogo();
+    cargarInventario();
+  }else{
+    alert("❌ Contraseña incorrecta. Acceso denegado.");
+    document.body.innerHTML = "<h2 style='text-align:center; margin-top:50px;'>🚫 Acceso bloqueado</h2>";
+  }
+}
+
+// Cargar catálogo
+function cargarCatalogo(){
+  fetch(API_URL+"?action=getCatalogo")
+    .then(r=>{
+      if(!r.ok) throw new Error("Error HTTP catálogo: "+r.status);
+      return r.json();
+    })
+    .then(data=>{
+      catalogo = data || [];
+      mostrarCatalogo(catalogo);
+    })
+    .catch(err=>{
+      console.error("Error al cargar catálogo:", err);
+      alert("No se pudo cargar el catálogo. Revisa la URL del WebApp y permisos.");
+    });
+}
+
+// Mostrar catálogo en tabla
+function mostrarCatalogo(data){
+  const tbody = document.getElementById('tablaCatalogo');
+  tbody.innerHTML = '';
+  (data || []).forEach(item=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${item[0]}</td><td>${item[1]}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// 🔎 Buscar en catálogo
+document.addEventListener('input', (e)=>{
+  if(e.target && e.target.id === 'buscarCatalogo'){
+    const filtro = e.target.value.toLowerCase();
+    const filtrados = catalogo.filter(item =>
+      String(item[0] || '').toLowerCase().includes(filtro) ||
+      String(item[1] || '').toLowerCase().includes(filtro)
+    );
+    mostrarCatalogo(filtrados);
+  }
+});
+
+// Cargar inventario
+function cargarInventario(){
+  fetch(API_URL+"?action=getInventario")
+    .then(r=>{
+      if(!r.ok) throw new Error("Error HTTP inventario: "+r.status);
+      return r.json();
+    })
+    .then(data=>{
+      inventario = data || [];
+      mostrarInventario(inventario);
+    })
+    .catch(err=>{
+      console.error("Error al cargar inventario:", err);
+      alert("No se pudo cargar el inventario. Revisa la URL del WebApp y permisos.");
+    });
+}
+
+// Mostrar inventario en tabla
+function mostrarInventario(data){
+  const tbody = document.getElementById('tablaInventario');
+  tbody.innerHTML = '';
+  (data || []).forEach(item=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${item[0]}</td>
+      <td>${item[1]}</td>
+      <td>${item[2]}</td>
+      <td>
+        <button class="btn btn-warning btn-sm me-1" onclick="editarProducto('${item[0]}')">✏️ Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="eliminarProducto('${item[0]}')">🗑 Eliminar</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// Autocompletar descripción en tiempo real
+document.getElementById('codigo').addEventListener('input', ()=>{
+  const codigo = document.getElementById('codigo').value.trim();
+  const item = catalogo.find(x=>x[0]===codigo);
+  if(item) document.getElementById('descripcion').value = item[1];
+});
+
+// Guardar producto (acumula si ya existe)
+document.getElementById('formProducto').addEventListener('submit', e=>{
+  e.preventDefault();
+  const codigo = document.getElementById('codigo').value.trim();
+  const descripcion = document.getElementById('descripcion').value.trim();
+  let cantidad = parseFloat(document.getElementById('cantidad').value);
+
+  if(!codigo || !descripcion || isNaN(cantidad)){
+    alert("Completa todos los campos correctamente.");
+    return;
+  }
+
+  const existente = inventario.find(x=>x[0]===codigo);
+  if(existente){
+    if(confirm("Este producto ya existe, ¿deseas acumular cantidades?")){
+      cantidad = parseFloat(existente[2]) + cantidad;
+    }
+  }
+
+  const data = { action: "guardar", codigo, descripcion, cantidad };
+
+  fetch(API_URL,{method:"POST",body:JSON.stringify(data)})
+    .then(r=>{
+      if(!r.ok) throw new Error("Error HTTP al guardar: "+r.status);
+      return r.json();
+    })
+    .then(()=>{
+      alert("✅ ¡Producto guardado exitosamente!");
+      document.getElementById('formProducto').reset();
+      cargarInventario();
+    })
+    .catch(error => {
+      console.error('Error al guardar:', error);
+      alert("❌ Hubo un error al guardar el producto.");
+    });
+});
+
+// Editar producto
+function editarProducto(codigo){
+  const item = inventario.find(x=>x[0]===codigo);
+  if(item){
+    document.getElementById('codigo').value = item[0];
+    document.getElementById('descripcion').value = item[1];
+    document.getElementById('cantidad').value = item[2];
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+// Eliminar producto
+function eliminarProducto(codigo){
+  if(confirm('⚠️ ¿Eliminar este producto?')){
+    const data = { action: "eliminar", codigo };
+    fetch(API_URL,{method:"POST",body:JSON.stringify(data)})
+      .then(r=>{
+        if(!r.ok) throw new Error("Error HTTP al eliminar: "+r.status);
+        return r.json();
+      })
+      .then(()=> {
+        alert("🗑 ¡Producto eliminado exitosamente!");
+        cargarInventario();
+      })
+      .catch(error => {
+        console.error('Error al eliminar:', error);
+        alert("❌ Hubo un error al eliminar el producto.");
+      });
+  }
+}
+
+// 🔎 Buscar en inventario
+document.getElementById('buscar').addEventListener('input', e=>{
+  const filtro = e.target.value.toLowerCase();
+  const filtrados = inventario.filter(item =>
+    String(item[0] || '').toLowerCase().includes(filtro) ||
+    String(item[1] || '').toLowerCase().includes(filtro)
+  );
+  mostrarInventario(filtrados);
+});
+
+// 📤 Exportar CSV
+function exportarCSV(){
+  let csv = "Código,Descripción,Cantidad\n";
+  inventario.forEach(row => {
+    csv += `${row[0]},${row[1]},${row[2]}\n`;
+  });
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "inventario.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 📥 Importar CSV
+function importarCSV(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    // Soporta \r\n y líneas en blanco
+    const lineas = e.target.result.split(/\r?\n/).slice(1).filter(l=>l.trim().length);
+    const peticiones = [];
+    lineas.forEach(l=>{
+      const [codigo, descripcion, cantidad] = l.split(",");
+      if(codigo && descripcion && cantidad){
+        const data = { action:"guardar", codigo: codigo.trim(), descripcion: descripcion.trim(), cantidad: parseFloat(cantidad) };
+        peticiones.push(fetch(API_URL,{method:"POST",body:JSON.stringify(data)}));
+      }
+    });
+    Promise.allSettled(peticiones).then(()=>{
+      alert("📥 Importación completada.");
+      cargarInventario();
+    });
+  };
+  reader.readAsText(file);
+}
+
+// Inicializar con login
+window.onload = login;
+</script>
+</body>
+</html>
