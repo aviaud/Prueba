@@ -42,7 +42,7 @@ InventarioWeb/
 2. 🔧 En **Google Apps Script**:
    - Crear un nuevo proyecto.
    - Pegar el contenido de:
-     function doGet(e) {
+    ` function doGet(e) {
   var action = e.parameter.action;
 
   if (action === "getCatalogo") return getCatalogo();
@@ -106,7 +106,7 @@ function doPost(e) {
       }
     }
   }
-
+`
   return ContentService.createTextOutput(JSON.stringify({ status: "OK" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
